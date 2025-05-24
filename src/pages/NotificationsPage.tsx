@@ -17,9 +17,9 @@ const NotificationsPage = () => {
         .from('notifications')
         .select(`
           *,
-          actor:actor_id (username, display_name, avatar_url, is_verified),
-          post:post_id (content),
-          comment:comment_id (content)
+          actor:profiles!notifications_actor_id_fkey (username, display_name, avatar_url, is_verified),
+          post:posts (content),
+          comment:comments (content)
         `)
         .eq('user_id', user.user.id)
         .order('created_at', { ascending: false });
