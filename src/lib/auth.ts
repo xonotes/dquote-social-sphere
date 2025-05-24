@@ -11,7 +11,7 @@ export interface Profile {
   is_private: boolean;
   is_verified: boolean;
   role: 'user' | 'admin';
-  social_links: Record<string, string>;
+  social_links: any; // Changed from Record<string, string> to any to match Supabase Json type
   last_username_change: string | null;
   created_at: string;
   updated_at: string;
