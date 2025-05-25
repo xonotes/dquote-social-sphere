@@ -6,12 +6,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import PostCard from '@/components/PostCard';
 import StoriesSection from '@/components/StoriesSection';
 import RecommendedUsers from '@/components/RecommendedUsers';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Post {
   id: string;
   content: string;
   image_url: string | null;
   created_at: string;
+  user_id: string;
   profiles: {
     username: string;
     display_name: string;
@@ -27,78 +29,110 @@ const HomePage = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data: posts, isLoading } = useQuery({
+  const { data: posts, isLoading, error } = useQuery({
     queryKey: ['home-feed', user?.user.id],
     queryFn: async () => {
       if (!user) return [];
 
-      // Get posts from followed users and own posts
-      const { data: followingPosts, error: followingError } = await supabase
+      console.log('Fetching home feed for user:', user.profile.id);
+
+      // Simplified query - get recent posts with basic info
+      const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select(`
-          *,
-          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified),
-          likes (count),
-          comments (count)
+          id,
+          content,
+          image_url,
+          created_at,
+          user_id,
+          profiles!posts_user_id_fkey (
+            username,
+            display_name,
+            avatar_url,
+            is_verified
+          )
         `)
-        .in('user_id', [
-          user.profile.id,
-          ...(await supabase
-            .from('follows')
-            .select('following_id')
-            .eq('follower_id', user.profile.id)
-            .then(({ data }) => data?.map(f => f.following_id) || []))
-        ])
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(10);
 
-      if (followingError) throw followingError;
+      if (postsError) {
+        console.error('Error fetching posts:', postsError);
+        throw postsError;
+      }
 
-      // Add user like status
-      const postsWithLikes = await Promise.all(
-        (followingPosts || []).map(async (post) => {
-          const { data: userLike } = await supabase
-            .from('likes')
-            .select('id')
-            .eq('post_id', post.id)
-            .eq('user_id', user.profile.id)
-            .maybeSingle();
+      if (!postsData || postsData.length === 0) {
+        console.log('No posts found');
+        return [];
+      }
 
-          return {
-            ...post,
-            likes_count: post.likes?.[0]?.count || 0,
-            comments_count: post.comments?.[0]?.count || 0,
-            user_has_liked: !!userLike
-          };
-        })
-      );
+      console.log('Fetched posts:', postsData.length);
 
-      return postsWithLikes;
+      // Get likes and comments count in parallel
+      const postIds = postsData.map(post => post.id);
+      
+      const [likesData, commentsData, userLikesData] = await Promise.all([
+        supabase
+          .from('likes')
+          .select('post_id')
+          .in('post_id', postIds),
+        
+        supabase
+          .from('comments')
+          .select('post_id')
+          .in('post_id', postIds),
+        
+        supabase
+          .from('likes')
+          .select('post_id')
+          .in('post_id', postIds)
+          .eq('user_id', user.profile.id)
+      ]);
+
+      // Count likes and comments efficiently
+      const likeCounts = (likesData.data || []).reduce((acc, like) => {
+        acc[like.post_id] = (acc[like.post_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const commentCounts = (commentsData.data || []).reduce((acc, comment) => {
+        acc[comment.post_id] = (acc[comment.post_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const userLikes = new Set((userLikesData.data || []).map(like => like.post_id));
+
+      const enrichedPosts = postsData.map(post => ({
+        ...post,
+        likes_count: likeCounts[post.id] || 0,
+        comments_count: commentCounts[post.id] || 0,
+        user_has_liked: userLikes.has(post.id)
+      }));
+
+      console.log('Enriched posts:', enrichedPosts.length);
+      return enrichedPosts;
     },
-    enabled: !!user
+    enabled: !!user,
+    staleTime: 30000, // Cache for 30 seconds
+    retry: 1,
+    refetchOnWindowFocus: false
   });
 
-  if (isLoading) {
+  if (error) {
+    console.error('Home feed error:', error);
     return (
       <div className="min-h-screen bg-gray-50 pb-20">
         <div className="bg-white border-b sticky top-0 z-10 p-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-blue-600">DQUOTE</h1>
-          <div className="w-8 h-8 bg-blue-100 rounded-full animate-pulse"></div>
         </div>
-        <div className="p-4 space-y-4">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-white p-4 rounded-lg border animate-pulse">
-              <div className="flex items-center space-x-3 mb-3">
-                <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-300 rounded w-1/3 mb-1"></div>
-                  <div className="h-3 bg-gray-300 rounded w-1/4"></div>
-                </div>
-              </div>
-              <div className="h-4 bg-gray-300 rounded w-full mb-2"></div>
-              <div className="h-4 bg-gray-300 rounded w-2/3"></div>
-            </div>
-          ))}
+        <div className="text-center py-12 px-4">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Something went wrong</h3>
+          <p className="text-gray-600 mb-4">Unable to load your feed. Please try again.</p>
+          <button 
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['home-feed'] })}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -129,12 +163,33 @@ const HomePage = () => {
       {/* Stories */}
       <StoriesSection />
 
-      {/* Recommended Users for new users */}
+      {/* Recommended Users */}
       <RecommendedUsers />
 
       {/* Posts Feed */}
       <div className="space-y-0">
-        {!posts || posts.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-0">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-white border-b border-gray-200 p-4">
+                <div className="flex items-center space-x-3 mb-3">
+                  <Skeleton className="w-8 h-8 rounded-full" />
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-24 mb-1" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <Skeleton className="h-3 w-8" />
+                </div>
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3 mb-3" />
+                <div className="flex items-center space-x-6">
+                  <Skeleton className="h-5 w-12" />
+                  <Skeleton className="h-5 w-12" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !posts || posts.length === 0 ? (
           <div className="text-center py-12 px-4">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to DQUOTE!</h3>
             <p className="text-gray-600 mb-4">Start following users to see their posts in your feed.</p>
