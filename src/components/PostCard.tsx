@@ -1,10 +1,18 @@
 
 import React, { useState } from 'react';
-import { Heart, MessageCircle, Share, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Share, MoreHorizontal, Trash2, Edit } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface PostCardProps {
   post: {
@@ -18,48 +26,91 @@ interface PostCardProps {
       avatar_url: string | null;
       is_verified: boolean;
     };
-    likes: { count: number }[];
-    comments: { count: number }[];
+    likes_count: number;
+    comments_count: number;
     user_has_liked: boolean;
+    user_id?: string;
   };
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isLiked, setIsLiked] = useState(post.user_has_liked);
-  const [likesCount, setLikesCount] = useState(post.likes[0]?.count || 0);
+  const [likesCount, setLikesCount] = useState(post.likes_count || 0);
 
-  const handleLike = async () => {
-    if (!user) return;
+  const likeMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('Not authenticated');
 
-    try {
       if (isLiked) {
-        await supabase
+        const { error } = await supabase
           .from('likes')
           .delete()
           .eq('post_id', post.id)
           .eq('user_id', user.profile.id);
         
-        setLikesCount(prev => prev - 1);
-        setIsLiked(false);
+        if (error) throw error;
       } else {
-        await supabase
+        const { error } = await supabase
           .from('likes')
           .insert({ post_id: post.id, user_id: user.profile.id });
         
-        setLikesCount(prev => prev + 1);
-        setIsLiked(true);
+        if (error) throw error;
+
+        // Create notification for post owner
+        if (post.user_id && post.user_id !== user.profile.id) {
+          await supabase.rpc('create_notification', {
+            p_user_id: post.user_id,
+            p_actor_id: user.profile.id,
+            p_type: 'like',
+            p_post_id: post.id
+          });
+        }
       }
-    } catch (error) {
-      console.error('Error toggling like:', error);
+    },
+    onMutate: () => {
+      setIsLiked(!isLiked);
+      setLikesCount(prev => isLiked ? prev - 1 : prev + 1);
+    },
+    onError: (error: any) => {
+      setIsLiked(isLiked);
+      setLikesCount(post.likes_count || 0);
       toast({
         title: "Error",
-        description: "Failed to update like",
+        description: error.message,
         variant: "destructive"
       });
     }
-  };
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', post.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['home-feed'] });
+      queryClient.invalidateQueries({ queryKey: ['explore-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+      toast({
+        title: "Success",
+        description: "Post deleted successfully"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
 
   const handleShare = () => {
     const shareUrl = `${window.location.origin}/post/${post.id}`;
@@ -81,11 +132,13 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
     return `${Math.floor(diffInMinutes / 1440)}d`;
   };
 
+  const isOwnPost = post.user_id === user?.profile.id;
+
   return (
     <div className="bg-white border-b border-gray-200">
       {/* Header */}
       <div className="flex items-center justify-between p-4">
-        <div className="flex items-center space-x-3">
+        <Link to={`/profile/${post.profiles.username}`} className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
             {post.profiles.avatar_url ? (
               <img 
@@ -110,12 +163,24 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
             </div>
             <span className="text-gray-500 text-xs">@{post.profiles.username}</span>
           </div>
-        </div>
+        </Link>
         <div className="flex items-center space-x-2">
           <span className="text-gray-500 text-xs">{formatTimeAgo(post.created_at)}</span>
-          <Button variant="ghost" size="sm">
-            <MoreHorizontal size={16} />
-          </Button>
+          {isOwnPost && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => deleteMutation.mutate()}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Post
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -137,16 +202,17 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center space-x-6">
           <button 
-            onClick={handleLike}
+            onClick={() => likeMutation.mutate()}
             className={`flex items-center space-x-2 ${isLiked ? 'text-red-500' : 'text-gray-600'}`}
+            disabled={likeMutation.isPending}
           >
             <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
             <span className="text-sm">{likesCount}</span>
           </button>
-          <button className="flex items-center space-x-2 text-gray-600">
+          <Link to={`/post/${post.id}/comments`} className="flex items-center space-x-2 text-gray-600">
             <MessageCircle size={20} />
-            <span className="text-sm">{post.comments[0]?.count || 0}</span>
-          </button>
+            <span className="text-sm">{post.comments_count || 0}</span>
+          </Link>
         </div>
         <button onClick={handleShare} className="text-gray-600">
           <Share size={20} />

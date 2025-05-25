@@ -4,6 +4,8 @@ import { Search, User, Heart, MessageCircle, Share } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Link } from 'react-router-dom';
+import PostCard from '@/components/PostCard';
 
 const ExplorePage = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,9 +18,9 @@ const ExplorePage = () => {
         .from('posts')
         .select(`
           *,
-          profiles:user_id (username, display_name, avatar_url, is_verified),
-          likes (id),
-          comments (id)
+          profiles:profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified),
+          likes (count),
+          comments (count)
         `)
         .order('created_at', { ascending: false });
 
@@ -26,9 +28,29 @@ const ExplorePage = () => {
         query = query.ilike('content', `%${searchQuery}%`);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.limit(50);
       if (error) throw error;
-      return data;
+
+      // Add user like status
+      const postsWithLikes = await Promise.all(
+        (data || []).map(async (post) => {
+          const { data: userLike } = await supabase
+            .from('likes')
+            .select('id')
+            .eq('post_id', post.id)
+            .eq('user_id', user?.profile.id || '')
+            .maybeSingle();
+
+          return {
+            ...post,
+            likes_count: post.likes?.[0]?.count || 0,
+            comments_count: post.comments?.[0]?.count || 0,
+            user_has_liked: !!userLike
+          };
+        })
+      );
+
+      return postsWithLikes;
     }
   });
 
@@ -41,6 +63,7 @@ const ExplorePage = () => {
         .from('profiles')
         .select('*')
         .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+        .eq('is_private', false)
         .limit(10);
 
       if (error) throw error;
@@ -71,28 +94,32 @@ const ExplorePage = () => {
           <div>
             <h2 className="text-lg font-semibold mb-3">Users</h2>
             <div className="space-y-3">
-              {users.map((user) => (
-                <div key={user.id} className="flex items-center space-x-3 p-3 bg-white rounded-lg border">
+              {users.map((profile) => (
+                <Link 
+                  key={profile.id} 
+                  to={`/profile/${profile.username}`}
+                  className="flex items-center space-x-3 p-3 bg-white rounded-lg border hover:bg-gray-50"
+                >
                   <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
-                    {user.avatar_url ? (
-                      <img src={user.avatar_url} alt={user.username} className="w-12 h-12 rounded-full object-cover" />
+                    {profile.avatar_url ? (
+                      <img src={profile.avatar_url} alt={profile.username} className="w-12 h-12 rounded-full object-cover" />
                     ) : (
                       <User className="h-6 w-6 text-gray-600" />
                     )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-1">
-                      <span className="font-semibold">{user.display_name || user.username}</span>
-                      {user.is_verified && (
+                      <span className="font-semibold">{profile.display_name || profile.username}</span>
+                      {profile.is_verified && (
                         <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                          <span className="text-white text-xs">✓</span>
                         </div>
                       )}
                     </div>
-                    <p className="text-gray-600 text-sm">@{user.username}</p>
-                    {user.bio && <p className="text-gray-700 text-sm mt-1">{user.bio}</p>}
+                    <p className="text-gray-600 text-sm">@{profile.username}</p>
+                    {profile.bio && <p className="text-gray-700 text-sm mt-1">{profile.bio}</p>}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -119,60 +146,9 @@ const ExplorePage = () => {
               ))}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-0">
               {posts?.map((post) => (
-                <div key={post.id} className="bg-white p-4 rounded-lg border">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
-                      {post.profiles?.avatar_url ? (
-                        <img 
-                          src={post.profiles.avatar_url} 
-                          alt={post.profiles.username} 
-                          className="w-10 h-10 rounded-full object-cover" 
-                        />
-                      ) : (
-                        <User className="h-5 w-5 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-1">
-                        <span className="font-semibold">
-                          {post.profiles?.display_name || post.profiles?.username}
-                        </span>
-                        {post.profiles?.is_verified && (
-                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                            <div className="w-2 h-2 bg-white rounded-full"></div>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-gray-600 text-sm">@{post.profiles?.username}</p>
-                    </div>
-                  </div>
-
-                  <p className="text-gray-800 mb-3">{post.content}</p>
-
-                  {post.image_url && (
-                    <img 
-                      src={post.image_url} 
-                      alt="Post" 
-                      className="w-full rounded-lg mb-3 max-h-96 object-cover" 
-                    />
-                  )}
-
-                  <div className="flex items-center justify-between text-gray-600">
-                    <button className="flex items-center space-x-1">
-                      <Heart className="h-5 w-5" />
-                      <span>{post.likes?.length || 0}</span>
-                    </button>
-                    <button className="flex items-center space-x-1">
-                      <MessageCircle className="h-5 w-5" />
-                      <span>{post.comments?.length || 0}</span>
-                    </button>
-                    <button>
-                      <Share className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
+                <PostCard key={post.id} post={post} />
               ))}
             </div>
           )}

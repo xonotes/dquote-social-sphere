@@ -1,9 +1,11 @@
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import PostCard from '@/components/PostCard';
 import StoriesSection from '@/components/StoriesSection';
+import RecommendedUsers from '@/components/RecommendedUsers';
 
 interface Post {
   id: string;
@@ -16,83 +18,110 @@ interface Post {
     avatar_url: string | null;
     is_verified: boolean;
   };
-  likes: { count: number }[];
-  comments: { count: number }[];
+  likes_count: number;
+  comments_count: number;
   user_has_liked: boolean;
 }
 
 const HomePage = () => {
   const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    const fetchFeed = async () => {
-      if (!user) return;
+  const { data: posts, isLoading } = useQuery({
+    queryKey: ['home-feed', user?.user.id],
+    queryFn: async () => {
+      if (!user) return [];
 
-      const { data: posts, error } = await supabase
+      // Get posts from followed users and own posts
+      const { data: followingPosts, error: followingError } = await supabase
         .from('posts')
         .select(`
           *,
-          profiles!posts_user_id_fkey (
-            username,
-            display_name,
-            avatar_url,
-            is_verified
-          ),
+          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified),
           likes (count),
           comments (count)
         `)
+        .in('user_id', [
+          user.profile.id,
+          ...(await supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', user.profile.id)
+            .then(({ data }) => data?.map(f => f.following_id) || []))
+        ])
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (error) {
-        console.error('Error fetching posts:', error);
-        return;
-      }
+      if (followingError) throw followingError;
 
-      // Check which posts the user has liked
+      // Add user like status
       const postsWithLikes = await Promise.all(
-        posts.map(async (post) => {
+        (followingPosts || []).map(async (post) => {
           const { data: userLike } = await supabase
             .from('likes')
             .select('id')
             .eq('post_id', post.id)
             .eq('user_id', user.profile.id)
-            .single();
+            .maybeSingle();
 
           return {
             ...post,
+            likes_count: post.likes?.[0]?.count || 0,
+            comments_count: post.comments?.[0]?.count || 0,
             user_has_liked: !!userLike
           };
         })
       );
 
-      setPosts(postsWithLikes);
-      setLoading(false);
-    };
+      return postsWithLikes;
+    },
+    enabled: !!user
+  });
 
-    fetchFeed();
-  }, [user]);
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="bg-white border-b sticky top-0 z-10 p-4 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-blue-600">DQUOTE</h1>
+          <div className="w-8 h-8 bg-blue-100 rounded-full animate-pulse"></div>
+        </div>
+        <div className="p-4 space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-white p-4 rounded-lg border animate-pulse">
+              <div className="flex items-center space-x-3 mb-3">
+                <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-300 rounded w-1/3 mb-1"></div>
+                  <div className="h-3 bg-gray-300 rounded w-1/4"></div>
+                </div>
+              </div>
+              <div className="h-4 bg-gray-300 rounded w-full mb-2"></div>
+              <div className="h-4 bg-gray-300 rounded w-2/3"></div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="pb-20">
+    <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+      <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center z-10">
         <h1 className="text-2xl font-bold text-blue-600">DQUOTE</h1>
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-            <span className="text-blue-600 text-sm font-semibold">
-              {user?.profile.display_name?.charAt(0) || 'U'}
-            </span>
+            {user?.profile.avatar_url ? (
+              <img
+                src={user.profile.avatar_url}
+                alt={user.profile.username}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            ) : (
+              <span className="text-blue-600 text-sm font-semibold">
+                {user?.profile.display_name?.charAt(0) || 'U'}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -100,11 +129,16 @@ const HomePage = () => {
       {/* Stories */}
       <StoriesSection />
 
+      {/* Recommended Users for new users */}
+      <RecommendedUsers />
+
       {/* Posts Feed */}
       <div className="space-y-0">
-        {posts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No posts to show. Follow some users to see their posts!</p>
+        {!posts || posts.length === 0 ? (
+          <div className="text-center py-12 px-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to DQUOTE!</h3>
+            <p className="text-gray-600 mb-4">Start following users to see their posts in your feed.</p>
+            <p className="text-gray-600">Or create your first post to get started!</p>
           </div>
         ) : (
           posts.map((post) => (

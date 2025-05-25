@@ -11,7 +11,7 @@ export interface Profile {
   is_private: boolean;
   is_verified: boolean;
   role: 'user' | 'admin';
-  social_links: any; // Changed from Record<string, string> to any to match Supabase Json type
+  social_links: any;
   last_username_change: string | null;
   created_at: string;
   updated_at: string;
@@ -44,7 +44,7 @@ export const signUp = async (email: string, password: string, username: string, 
     .from('profiles')
     .select('username')
     .eq('username', username)
-    .single();
+    .maybeSingle();
     
   if (existingUser) {
     throw new Error('Username is already taken');
@@ -83,4 +83,16 @@ export const signOut = async () => {
 export const resetPassword = async (email: string) => {
   const { error } = await supabase.auth.resetPasswordForEmail(email);
   if (error) throw error;
+};
+
+export const updateProfile = async (updates: Partial<Profile>) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', (await getCurrentUser())?.user.id)
+    .select()
+    .single();
+    
+  if (error) throw error;
+  return data;
 };

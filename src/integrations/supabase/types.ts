@@ -469,6 +469,21 @@ export type Database = {
         }
         Returns: string
       }
+      has_role: {
+        Args: {
+          _user_id: string
+          _role: Database["public"]["Enums"]["user_role"]
+        }
+        Returns: boolean
+      }
+      is_blocked_by: {
+        Args: { _user_id: string; _blocked_by: string }
+        Returns: boolean
+      }
+      is_following: {
+        Args: { _follower_id: string; _following_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       notification_type: "like" | "comment" | "follow" | "mention"

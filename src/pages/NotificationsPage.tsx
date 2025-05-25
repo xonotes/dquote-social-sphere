@@ -1,12 +1,14 @@
 
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Heart, MessageCircle, UserPlus, AtSign } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const NotificationsPage = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications', user?.user.id],
@@ -30,12 +32,19 @@ const NotificationsPage = () => {
     enabled: !!user
   });
 
-  const markAsRead = async (notificationId: string) => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId);
-  };
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    }
+  });
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -117,7 +126,7 @@ const NotificationsPage = () => {
                 className={`bg-white p-4 rounded-lg border cursor-pointer transition-colors ${
                   !notification.is_read ? 'bg-blue-50 border-blue-200' : ''
                 }`}
-                onClick={() => !notification.is_read && markAsRead(notification.id)}
+                onClick={() => !notification.is_read && markAsReadMutation.mutate(notification.id)}
               >
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
@@ -125,17 +134,22 @@ const NotificationsPage = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                        {notification.actor?.avatar_url ? (
-                          <img 
-                            src={notification.actor.avatar_url} 
-                            alt={notification.actor.username} 
-                            className="w-8 h-8 rounded-full object-cover" 
-                          />
-                        ) : (
-                          <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
-                        )}
-                      </div>
+                      <Link 
+                        to={`/profile/${notification.actor?.username}`}
+                        className="flex items-center space-x-2"
+                      >
+                        <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                          {notification.actor?.avatar_url ? (
+                            <img 
+                              src={notification.actor.avatar_url} 
+                              alt={notification.actor.username} 
+                              className="w-8 h-8 rounded-full object-cover" 
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
+                          )}
+                        </div>
+                      </Link>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900">
                           {getNotificationText(notification)}
@@ -150,9 +164,12 @@ const NotificationsPage = () => {
                     </div>
                     
                     {notification.post && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-700">
+                      <Link 
+                        to={`/post/${notification.post_id}`}
+                        className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-700 block hover:bg-gray-100"
+                      >
                         "{notification.post.content.slice(0, 100)}..."
-                      </div>
+                      </Link>
                     )}
                   </div>
                 </div>

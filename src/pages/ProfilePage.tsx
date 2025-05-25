@@ -3,336 +3,336 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Settings, Share, User, Heart, MessageCircle, Edit3, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
+import { useParams, Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { Settings, Share, UserPlus, UserMinus, Shield } from 'lucide-react';
+import PostCard from '@/components/PostCard';
 
 const ProfilePage = () => {
+  const { username } = useParams();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [editingPost, setEditingPost] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
+  const [activeTab, setActiveTab] = useState<'posts' | 'followers' | 'following'>('posts');
 
-  // Fetch user's posts
-  const { data: posts, isLoading: postsLoading } = useQuery({
-    queryKey: ['user-posts', user?.user.id],
+  const isOwnProfile = !username || username === user?.profile.username;
+  const profileUsername = username || user?.profile.username;
+
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ['profile', profileUsername],
     queryFn: async () => {
-      if (!user) return [];
-      
       const { data, error } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          likes (id),
-          comments (id)
-        `)
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false });
+        .from('profiles')
+        .select('*')
+        .eq('username', profileUsername)
+        .single();
 
       if (error) throw error;
       return data;
     },
-    enabled: !!user
+    enabled: !!profileUsername
   });
 
-  // Fetch user stats
   const { data: stats } = useQuery({
-    queryKey: ['user-stats', user?.user.id],
+    queryKey: ['profile-stats', profile?.id],
     queryFn: async () => {
-      if (!user) return { followers: 0, following: 0, totalPosts: 0, totalLikes: 0 };
-      
-      const [followersRes, followingRes, postsRes] = await Promise.all([
-        supabase
-          .from('follows')
-          .select('id')
-          .eq('following_id', user.user.id),
-        supabase
-          .from('follows')
-          .select('id')
-          .eq('follower_id', user.user.id),
-        supabase
-          .from('posts')
-          .select('id')
-          .eq('user_id', user.user.id)
+      if (!profile) return null;
+
+      const [followersRes, followingRes, postsRes, likesRes] = await Promise.all([
+        supabase.from('follows').select('*', { count: 'exact' }).eq('following_id', profile.id),
+        supabase.from('follows').select('*', { count: 'exact' }).eq('follower_id', profile.id),
+        supabase.from('posts').select('*', { count: 'exact' }).eq('user_id', profile.id),
+        supabase.from('likes').select('*', { count: 'exact' }).eq('user_id', profile.id)
       ]);
 
-      // Calculate total likes across all user's posts
-      const { data: likesData } = await supabase
-        .from('likes')
-        .select('id, post_id')
-        .in('post_id', postsRes.data?.map(p => p.id) || []);
-
       return {
-        followers: followersRes.data?.length || 0,
-        following: followingRes.data?.length || 0,
-        totalPosts: postsRes.data?.length || 0,
-        totalLikes: likesData?.length || 0
+        followers: followersRes.count || 0,
+        following: followingRes.count || 0,
+        posts: postsRes.count || 0,
+        likes: likesRes.count || 0
       };
     },
-    enabled: !!user
+    enabled: !!profile
   });
 
-  // Delete post mutation
-  const deletePostMutation = useMutation({
-    mutationFn: async (postId: string) => {
-      const { error } = await supabase
+  const { data: isFollowing } = useQuery({
+    queryKey: ['is-following', profile?.id],
+    queryFn: async () => {
+      if (!profile || !user || isOwnProfile) return false;
+
+      const { data } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', user.profile.id)
+        .eq('following_id', profile.id)
+        .maybeSingle();
+
+      return !!data;
+    },
+    enabled: !!profile && !!user && !isOwnProfile
+  });
+
+  const { data: posts } = useQuery({
+    queryKey: ['user-posts', profile?.id],
+    queryFn: async () => {
+      if (!profile) return [];
+
+      const { data, error } = await supabase
         .from('posts')
-        .delete()
-        .eq('id', postId);
-      
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified),
+          likes (count),
+          comments (count)
+        `)
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false });
+
       if (error) throw error;
+
+      // Add user like status
+      const postsWithLikes = await Promise.all(
+        (data || []).map(async (post) => {
+          const { data: userLike } = await supabase
+            .from('likes')
+            .select('id')
+            .eq('post_id', post.id)
+            .eq('user_id', user?.profile.id || '')
+            .maybeSingle();
+
+          return {
+            ...post,
+            likes_count: post.likes?.[0]?.count || 0,
+            comments_count: post.comments?.[0]?.count || 0,
+            user_has_liked: !!userLike
+          };
+        })
+      );
+
+      return postsWithLikes;
+    },
+    enabled: !!profile
+  });
+
+  const followMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile || !user) throw new Error('Missing data');
+
+      if (isFollowing) {
+        const { error } = await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', user.profile.id)
+          .eq('following_id', profile.id);
+        
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('follows')
+          .insert({ follower_id: user.profile.id, following_id: profile.id });
+        
+        if (error) throw error;
+
+        // Create notification
+        await supabase.rpc('create_notification', {
+          p_user_id: profile.id,
+          p_actor_id: user.profile.id,
+          p_type: 'follow'
+        });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-      queryClient.invalidateQueries({ queryKey: ['user-stats'] });
-      toast.success('Post deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['is-following'] });
+      queryClient.invalidateQueries({ queryKey: ['profile-stats'] });
+      toast({
+        title: "Success",
+        description: isFollowing ? "Unfollowed successfully" : "Followed successfully"
+      });
     },
-    onError: () => {
-      toast.error('Failed to delete post');
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 
-  // Update post mutation
-  const updatePostMutation = useMutation({
-    mutationFn: async ({ postId, content }: { postId: string; content: string }) => {
+  const blockMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile || !user) throw new Error('Missing data');
+
       const { error } = await supabase
-        .from('posts')
-        .update({ content, updated_at: new Date().toISOString() })
-        .eq('id', postId);
+        .from('blocks')
+        .insert({ blocker_id: user.profile.id, blocked_id: profile.id });
       
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-      setEditingPost(null);
-      setEditContent('');
-      toast.success('Post updated successfully');
+      toast({
+        title: "User blocked",
+        description: "You have blocked this user successfully"
+      });
     },
-    onError: () => {
-      toast.error('Failed to update post');
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 
   const handleShare = () => {
-    const profileUrl = `${window.location.origin}/profile/${user?.profile.username}`;
-    if (navigator.share) {
-      navigator.share({
-        title: `${user?.profile.display_name || user?.profile.username}'s DQUOTE Profile`,
-        url: profileUrl
-      });
-    } else {
-      navigator.clipboard.writeText(profileUrl);
-      toast.success('Profile link copied to clipboard!');
-    }
+    const profileUrl = `${window.location.origin}/profile/${profile?.username}`;
+    navigator.clipboard.writeText(profileUrl);
+    toast({
+      title: "Link copied!",
+      description: "Profile link has been copied to clipboard"
+    });
   };
 
-  const startEditing = (post: any) => {
-    setEditingPost(post.id);
-    setEditContent(post.content);
-  };
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="bg-white p-4 animate-pulse">
+          <div className="w-20 h-20 bg-gray-300 rounded-full mx-auto mb-4"></div>
+          <div className="h-4 bg-gray-300 rounded w-1/2 mx-auto mb-2"></div>
+          <div className="h-3 bg-gray-300 rounded w-1/3 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
 
-  const cancelEditing = () => {
-    setEditingPost(null);
-    setEditContent('');
-  };
-
-  const saveEdit = () => {
-    if (editingPost && editContent.trim()) {
-      updatePostMutation.mutate({ postId: editingPost, content: editContent.trim() });
-    }
-  };
-
-  if (!user) {
-    return <div>Loading...</div>;
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">User not found</h2>
+          <p className="text-gray-600">The profile you're looking for doesn't exist.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
+      <div className="bg-white border-b">
         <div className="flex items-center justify-between p-4">
-          <h1 className="text-xl font-bold">Profile</h1>
-          <div className="flex items-center space-x-3">
-            <button onClick={handleShare} className="p-2 hover:bg-gray-100 rounded-full">
-              <Share className="h-5 w-5" />
-            </button>
-            <Link to="/settings" className="p-2 hover:bg-gray-100 rounded-full">
-              <Settings className="h-5 w-5" />
-            </Link>
+          <div>
+            <h1 className="text-xl font-bold">{profile.display_name}</h1>
+            <p className="text-gray-600 text-sm">@{profile.username}</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            {isOwnProfile ? (
+              <Link to="/settings">
+                <Button variant="outline" size="sm">
+                  <Settings size={16} className="mr-1" />
+                  Settings
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={handleShare}>
+                  <Share size={16} />
+                </Button>
+                <Button 
+                  variant={isFollowing ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => followMutation.mutate()}
+                  disabled={followMutation.isPending}
+                >
+                  {isFollowing ? (
+                    <>
+                      <UserMinus size={16} className="mr-1" />
+                      Unfollow
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={16} className="mr-1" />
+                      Follow
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => blockMutation.mutate()}
+                  disabled={blockMutation.isPending}
+                >
+                  <Shield size={16} />
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* Profile Info */}
-      <div className="bg-white p-6 border-b">
-        <div className="flex items-start space-x-4">
-          <div className="w-20 h-20 bg-gray-300 rounded-full flex items-center justify-center">
-            {user.profile.avatar_url ? (
-              <img 
-                src={user.profile.avatar_url} 
-                alt={user.profile.username} 
-                className="w-20 h-20 rounded-full object-cover" 
+      <div className="bg-white border-b p-4">
+        <div className="flex items-center space-x-4 mb-4">
+          <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center">
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={profile.username}
+                className="w-20 h-20 rounded-full object-cover"
               />
             ) : (
-              <User className="h-10 w-10 text-gray-600" />
+              <span className="text-gray-600 text-2xl font-semibold">
+                {profile.display_name?.charAt(0) || 'U'}
+              </span>
             )}
           </div>
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-1">
-              <h2 className="text-xl font-bold">{user.profile.display_name || user.profile.username}</h2>
-              {user.profile.is_verified && (
+              <h2 className="text-xl font-bold">{profile.display_name}</h2>
+              {profile.is_verified && (
                 <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
+                  <span className="text-white text-xs">✓</span>
                 </div>
               )}
             </div>
-            <p className="text-gray-600 mb-2">@{user.profile.username}</p>
-            {user.profile.bio && (
-              <p className="text-gray-800 mb-3">{user.profile.bio}</p>
-            )}
-            
-            {/* Social Links */}
-            {user.profile.social_links && Object.keys(user.profile.social_links).length > 0 && (
-              <div className="mb-3">
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(user.profile.social_links).map(([platform, url]) => (
-                    <a 
-                      key={platform}
-                      href={url as string}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 text-sm hover:underline"
-                    >
-                      {platform}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
+            <p className="text-gray-600 mb-2">@{profile.username}</p>
+            {profile.bio && <p className="text-gray-900">{profile.bio}</p>}
+          </div>
+        </div>
 
-            {/* Stats */}
-            <div className="flex space-x-6 text-sm">
-              <div className="text-center">
-                <div className="font-bold">{stats?.followers || 0}</div>
-                <div className="text-gray-600">Followers</div>
-              </div>
-              <div className="text-center">
-                <div className="font-bold">{stats?.following || 0}</div>
-                <div className="text-gray-600">Following</div>
-              </div>
-              <div className="text-center">
-                <div className="font-bold">{stats?.totalPosts || 0}</div>
-                <div className="text-gray-600">Posts</div>
-              </div>
-              <div className="text-center">
-                <div className="font-bold">{stats?.totalLikes || 0}</div>
-                <div className="text-gray-600">Likes</div>
-              </div>
-            </div>
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 text-center">
+          <div>
+            <div className="font-bold text-lg">{stats?.posts || 0}</div>
+            <div className="text-gray-600 text-sm">Posts</div>
+          </div>
+          <div>
+            <div className="font-bold text-lg">{stats?.followers || 0}</div>
+            <div className="text-gray-600 text-sm">Followers</div>
+          </div>
+          <div>
+            <div className="font-bold text-lg">{stats?.following || 0}</div>
+            <div className="text-gray-600 text-sm">Following</div>
+          </div>
+          <div>
+            <div className="font-bold text-lg">{stats?.likes || 0}</div>
+            <div className="text-gray-600 text-sm">Likes</div>
           </div>
         </div>
       </div>
 
       {/* Posts */}
-      <div className="p-4">
-        <h3 className="text-lg font-semibold mb-4">Your Posts</h3>
-        
-        {postsLoading ? (
-          <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-lg border animate-pulse">
-                <div className="h-4 bg-gray-300 rounded w-full mb-2"></div>
-                <div className="h-4 bg-gray-300 rounded w-2/3"></div>
-              </div>
-            ))}
-          </div>
-        ) : posts && posts.length > 0 ? (
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <div key={post.id} className="bg-white p-4 rounded-lg border">
-                {editingPost === post.id ? (
-                  <div className="space-y-3">
-                    <textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                    />
-                    <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={cancelEditing}
-                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={saveEdit}
-                        disabled={updatePostMutation.isPending}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {updatePostMutation.isPending ? 'Saving...' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-start mb-3">
-                      <p className="text-gray-800 flex-1">{post.content}</p>
-                      <div className="flex items-center space-x-2 ml-4">
-                        <button
-                          onClick={() => startEditing(post)}
-                          className="p-1 text-gray-400 hover:text-blue-600"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => deletePostMutation.mutate(post.id)}
-                          disabled={deletePostMutation.isPending}
-                          className="p-1 text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {post.image_url && (
-                      <img 
-                        src={post.image_url} 
-                        alt="Post" 
-                        className="w-full rounded-lg mb-3 max-h-96 object-cover" 
-                      />
-                    )}
-
-                    <div className="flex items-center justify-between text-gray-600 text-sm">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex items-center space-x-1">
-                          <Heart className="h-4 w-4" />
-                          <span>{post.likes?.length || 0}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <MessageCircle className="h-4 w-4" />
-                          <span>{post.comments?.length || 0}</span>
-                        </div>
-                      </div>
-                      <span>{new Date(post.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
+      <div className="space-y-0">
+        {!posts || posts.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-600">
+              {isOwnProfile ? "You haven't posted anything yet." : "No posts to show."}
+            </p>
           </div>
         ) : (
-          <div className="text-center py-8">
-            <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No posts yet</h3>
-            <p className="text-gray-600">Start sharing your thoughts with the world!</p>
-            <Link 
-              to="/create" 
-              className="inline-block mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Create your first post
-            </Link>
-          </div>
+          posts.map((post) => (
+            <PostCard key={post.id} post={post} />
+          ))
         )}
       </div>
     </div>
