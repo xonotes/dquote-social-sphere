@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
+  error: string | null;
   refetchUser: () => Promise<void>;
 }
 
@@ -26,25 +27,40 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refetchUser = async () => {
     try {
       console.log('Refetching user...');
+      setError(null);
       const currentUser = await getCurrentUser();
       setUser(currentUser);
       console.log('User refetched:', currentUser ? 'Success' : 'No user');
     } catch (error) {
       console.error('Error fetching user:', error);
+      setError('Failed to load user data');
       setUser(null);
     }
   };
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const initAuth = async () => {
       try {
         console.log('Initializing auth...');
+        setError(null);
+        
+        // Set a timeout to prevent infinite loading
+        timeoutId = setTimeout(() => {
+          if (mounted && loading) {
+            console.log('Auth initialization timeout');
+            setError('Authentication is taking too long. Please refresh the page.');
+            setLoading(false);
+          }
+        }, 10000); // 10 second timeout
+        
         const currentUser = await getCurrentUser();
         if (mounted) {
           setUser(currentUser);
@@ -53,11 +69,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch (error) {
         console.error('Error initializing auth:', error);
         if (mounted) {
+          setError('Failed to initialize authentication');
           setUser(null);
         }
       } finally {
         if (mounted) {
           setLoading(false);
+          clearTimeout(timeoutId);
         }
       }
     };
@@ -70,13 +88,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!mounted) return;
 
       if (event === 'SIGNED_IN' && session) {
+        // Small delay to ensure Supabase state is fully updated
         setTimeout(async () => {
           if (mounted) {
             await refetchUser();
           }
-        }, 0);
+        }, 100);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        setError(null);
       }
       
       if (loading) {
@@ -86,6 +106,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return () => {
       mounted = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, []);
@@ -93,6 +114,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     loading,
+    error,
     refetchUser
   };
 

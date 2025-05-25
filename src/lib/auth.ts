@@ -40,7 +40,7 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
     
     console.log('User found, getting profile...');
     
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -51,9 +51,36 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
       return null;
     }
     
+    // If no profile exists, create one automatically
     if (!profile) {
-      console.error('No profile found for user');
-      return null;
+      console.log('No profile found, creating one...');
+      
+      const username = user.user_metadata?.username || 
+                      user.email?.split('@')[0] || 
+                      `user_${user.id.slice(0, 8)}`;
+      
+      const displayName = user.user_metadata?.display_name || 
+                         user.user_metadata?.full_name || 
+                         'New User';
+      
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          username,
+          display_name: displayName,
+          role: 'user'
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('Error creating profile:', createError);
+        return null;
+      }
+      
+      profile = newProfile;
+      console.log('Profile created successfully');
     }
     
     console.log('User and profile loaded successfully');

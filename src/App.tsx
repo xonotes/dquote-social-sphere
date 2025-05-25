@@ -19,16 +19,19 @@ import NotFound from "@/pages/NotFound";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: 2,
       refetchOnWindowFocus: false,
-      staleTime: 60000, // 1 minute
+      staleTime: 30000, // 30 seconds
       gcTime: 300000, // 5 minutes
       refetchInterval: false,
       refetchOnMount: true,
-      refetchOnReconnect: true
+      refetchOnReconnect: true,
+      // Faster timeout for better UX
+      networkMode: 'online'
     },
     mutations: {
-      retry: 1
+      retry: 1,
+      networkMode: 'online'
     }
   },
 });
