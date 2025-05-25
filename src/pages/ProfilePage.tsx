@@ -19,19 +19,25 @@ const ProfilePage = () => {
   const isOwnProfile = !username || username === user?.profile.username;
   const profileUsername = username || user?.profile.username;
 
-  const { data: profile, isLoading: profileLoading } = useQuery({
+  const { data: profile, isLoading: profileLoading, error: profileError } = useQuery({
     queryKey: ['profile', profileUsername],
     queryFn: async () => {
+      if (!profileUsername) throw new Error('No username provided');
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('username', profileUsername)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Profile fetch error:', error);
+        throw error;
+      }
       return data;
     },
-    enabled: !!profileUsername
+    enabled: !!profileUsername,
+    retry: 1
   });
 
   const { data: stats } = useQuery({
@@ -82,35 +88,32 @@ const ProfilePage = () => {
         .from('posts')
         .select(`
           *,
-          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified),
-          likes (count),
-          comments (count)
+          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified)
         `)
         .eq('user_id', profile.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Add user like status
-      const postsWithLikes = await Promise.all(
+      // Add user like status and counts
+      const postsWithData = await Promise.all(
         (data || []).map(async (post) => {
-          const { data: userLike } = await supabase
-            .from('likes')
-            .select('id')
-            .eq('post_id', post.id)
-            .eq('user_id', user?.profile.id || '')
-            .maybeSingle();
+          const [likesRes, commentsRes, userLikeRes] = await Promise.all([
+            supabase.from('likes').select('id', { count: 'exact' }).eq('post_id', post.id),
+            supabase.from('comments').select('id', { count: 'exact' }).eq('post_id', post.id),
+            user ? supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', user.profile.id).maybeSingle() : Promise.resolve({ data: null })
+          ]);
 
           return {
             ...post,
-            likes_count: post.likes?.[0]?.count || 0,
-            comments_count: post.comments?.[0]?.count || 0,
-            user_has_liked: !!userLike
+            likes_count: likesRes.count || 0,
+            comments_count: commentsRes.count || 0,
+            user_has_liked: !!userLikeRes.data
           };
         })
       );
 
-      return postsWithLikes;
+      return postsWithData;
     },
     enabled: !!profile
   });
@@ -205,12 +208,15 @@ const ProfilePage = () => {
     );
   }
 
-  if (!profile) {
+  if (profileError || !profile) {
     return (
       <div className="min-h-screen bg-gray-50 pb-20 flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">User not found</h2>
-          <p className="text-gray-600">The profile you're looking for doesn't exist.</p>
+          <p className="text-gray-600 mb-4">The profile you're looking for doesn't exist.</p>
+          <Link to="/home">
+            <Button>Go Home</Button>
+          </Link>
         </div>
       </div>
     );
@@ -324,10 +330,15 @@ const ProfilePage = () => {
       {/* Posts */}
       <div className="space-y-0">
         {!posts || posts.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-12 bg-white">
             <p className="text-gray-600">
               {isOwnProfile ? "You haven't posted anything yet." : "No posts to show."}
             </p>
+            {isOwnProfile && (
+              <Link to="/create" className="mt-4 inline-block">
+                <Button>Create your first post</Button>
+              </Link>
+            )}
           </div>
         ) : (
           posts.map((post) => (

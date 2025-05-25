@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Heart, MessageCircle, Share, MoreHorizontal, Trash2, Edit } from 'lucide-react';
+import { Heart, MessageCircle, Share, MoreHorizontal, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -39,10 +39,13 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const queryClient = useQueryClient();
   const [isLiked, setIsLiked] = useState(post.user_has_liked);
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
+  const [isLiking, setIsLiking] = useState(false);
 
   const likeMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
+
+      setIsLiking(true);
 
       if (isLiked) {
         const { error } = await supabase
@@ -71,17 +74,28 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
       }
     },
     onMutate: () => {
+      const previousLiked = isLiked;
+      const previousCount = likesCount;
+      
       setIsLiked(!isLiked);
       setLikesCount(prev => isLiked ? prev - 1 : prev + 1);
+      
+      return { previousLiked, previousCount };
     },
-    onError: (error: any) => {
-      setIsLiked(isLiked);
-      setLikesCount(post.likes_count || 0);
+    onError: (error: any, variables, context) => {
+      setIsLiked(context?.previousLiked || false);
+      setLikesCount(context?.previousCount || 0);
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive"
       });
+    },
+    onSettled: () => {
+      setIsLiking(false);
+      queryClient.invalidateQueries({ queryKey: ['home-feed'] });
+      queryClient.invalidateQueries({ queryKey: ['explore-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
     }
   });
 
@@ -185,36 +199,50 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-3">
-        <p className="text-gray-900 whitespace-pre-wrap">{post.content}</p>
-        {post.image_url && (
-          <div className="mt-3 rounded-lg overflow-hidden">
-            <img 
-              src={post.image_url} 
-              alt="Post content"
-              className="w-full max-h-96 object-cover"
-            />
-          </div>
-        )}
-      </div>
+      <Link to={`/post/${post.id}`} className="block">
+        <div className="px-4 pb-3">
+          <p className="text-gray-900 whitespace-pre-wrap">{post.content}</p>
+          {post.image_url && (
+            <div className="mt-3 rounded-lg overflow-hidden">
+              <img 
+                src={post.image_url} 
+                alt="Post content"
+                className="w-full max-h-96 object-cover"
+              />
+            </div>
+          )}
+        </div>
+      </Link>
 
       {/* Actions */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
         <div className="flex items-center space-x-6">
           <button 
             onClick={() => likeMutation.mutate()}
-            className={`flex items-center space-x-2 ${isLiked ? 'text-red-500' : 'text-gray-600'}`}
-            disabled={likeMutation.isPending}
+            className={`flex items-center space-x-2 transition-colors ${
+              isLiked ? 'text-red-500' : 'text-gray-600 hover:text-red-500'
+            }`}
+            disabled={isLiking || !user}
           >
-            <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
-            <span className="text-sm">{likesCount}</span>
+            <Heart 
+              size={20} 
+              fill={isLiked ? 'currentColor' : 'none'}
+              className={isLiking ? 'animate-pulse' : ''}
+            />
+            <span className="text-sm font-medium">{likesCount}</span>
           </button>
-          <Link to={`/post/${post.id}/comments`} className="flex items-center space-x-2 text-gray-600">
+          <Link 
+            to={`/post/${post.id}/comments`} 
+            className="flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition-colors"
+          >
             <MessageCircle size={20} />
-            <span className="text-sm">{post.comments_count || 0}</span>
+            <span className="text-sm font-medium">{post.comments_count || 0}</span>
           </Link>
         </div>
-        <button onClick={handleShare} className="text-gray-600">
+        <button 
+          onClick={handleShare} 
+          className="text-gray-600 hover:text-green-600 transition-colors"
+        >
           <Share size={20} />
         </button>
       </div>

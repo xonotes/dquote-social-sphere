@@ -14,6 +14,8 @@ import CreatePage from "@/pages/CreatePage";
 import NotificationsPage from "@/pages/NotificationsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
+import PostDetailPage from "@/pages/PostDetailPage";
+import CommentsPage from "@/pages/CommentsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -26,7 +28,6 @@ const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnMount: true,
       refetchOnReconnect: true,
-      // Faster timeout for better UX
       networkMode: 'online'
     },
     mutations: {
@@ -52,9 +53,11 @@ const App: React.FC = () => {
                   <Route path="explore" element={<ExplorePage />} />
                   <Route path="create" element={<CreatePage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
-                  <Route path="profile" element={<ProfilePage />} />
+                  <Route path="profile/:username?" element={<ProfilePage />} />
                   <Route path="settings" element={<SettingsPage />} />
                 </Route>
+                <Route path="/post/:postId" element={<PostDetailPage />} />
+                <Route path="/post/:postId/comments" element={<CommentsPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </AuthGate>
