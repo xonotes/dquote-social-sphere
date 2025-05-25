@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import PostCard from '@/components/PostCard';
@@ -27,16 +27,15 @@ interface Post {
 
 const HomePage = () => {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
-  const { data: posts, isLoading, error } = useQuery({
+  const { data: posts, isLoading, error, refetch } = useQuery({
     queryKey: ['home-feed', user?.user.id],
     queryFn: async () => {
       if (!user) return [];
 
-      console.log('Fetching home feed for user:', user.profile.id);
+      console.log('Fetching home feed...');
 
-      // Simplified query - get recent posts with basic info
+      // Single optimized query with all required data
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select(`
@@ -53,7 +52,7 @@ const HomePage = () => {
           )
         `)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20);
 
       if (postsError) {
         console.error('Error fetching posts:', postsError);
@@ -65,12 +64,10 @@ const HomePage = () => {
         return [];
       }
 
-      console.log('Fetched posts:', postsData.length);
-
-      // Get likes and comments count in parallel
       const postIds = postsData.map(post => post.id);
       
-      const [likesData, commentsData, userLikesData] = await Promise.all([
+      // Parallel queries for counts and user likes
+      const [likesResult, commentsResult, userLikesResult] = await Promise.all([
         supabase
           .from('likes')
           .select('post_id')
@@ -88,18 +85,18 @@ const HomePage = () => {
           .eq('user_id', user.profile.id)
       ]);
 
-      // Count likes and comments efficiently
-      const likeCounts = (likesData.data || []).reduce((acc, like) => {
+      // Process counts efficiently
+      const likeCounts = (likesResult.data || []).reduce((acc, like) => {
         acc[like.post_id] = (acc[like.post_id] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
 
-      const commentCounts = (commentsData.data || []).reduce((acc, comment) => {
+      const commentCounts = (commentsResult.data || []).reduce((acc, comment) => {
         acc[comment.post_id] = (acc[comment.post_id] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
 
-      const userLikes = new Set((userLikesData.data || []).map(like => like.post_id));
+      const userLikes = new Set((userLikesResult.data || []).map(like => like.post_id));
 
       const enrichedPosts = postsData.map(post => ({
         ...post,
@@ -108,12 +105,12 @@ const HomePage = () => {
         user_has_liked: userLikes.has(post.id)
       }));
 
-      console.log('Enriched posts:', enrichedPosts.length);
+      console.log('Feed loaded successfully:', enrichedPosts.length, 'posts');
       return enrichedPosts;
     },
     enabled: !!user,
-    staleTime: 30000, // Cache for 30 seconds
-    retry: 1,
+    staleTime: 30000,
+    retry: 2,
     refetchOnWindowFocus: false
   });
 
@@ -128,8 +125,8 @@ const HomePage = () => {
           <h3 className="text-lg font-medium text-gray-900 mb-2">Something went wrong</h3>
           <p className="text-gray-600 mb-4">Unable to load your feed. Please try again.</p>
           <button 
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['home-feed'] })}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+            onClick={() => refetch()}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             Retry
           </button>
@@ -160,17 +157,17 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* Stories */}
+      {/* Stories - Load independently */}
       <StoriesSection />
 
-      {/* Recommended Users */}
+      {/* Recommended Users - Load independently */}
       <RecommendedUsers />
 
       {/* Posts Feed */}
       <div className="space-y-0">
         {isLoading ? (
           <div className="space-y-0">
-            {[...Array(3)].map((_, i) => (
+            {[1, 2, 3].map((i) => (
               <div key={i} className="bg-white border-b border-gray-200 p-4">
                 <div className="flex items-center space-x-3 mb-3">
                   <Skeleton className="w-8 h-8 rounded-full" />
@@ -190,7 +187,7 @@ const HomePage = () => {
             ))}
           </div>
         ) : !posts || posts.length === 0 ? (
-          <div className="text-center py-12 px-4">
+          <div className="text-center py-12 px-4 bg-white">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to DQUOTE!</h3>
             <p className="text-gray-600 mb-4">Start following users to see their posts in your feed.</p>
             <p className="text-gray-600">Or create your first post to get started!</p>

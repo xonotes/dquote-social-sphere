@@ -21,11 +21,11 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
-      staleTime: 30000, // 30 seconds
-      gcTime: 300000, // 5 minutes (was cacheTime)
+      staleTime: 60000, // 1 minute
+      gcTime: 300000, // 5 minutes
       refetchInterval: false,
       refetchOnMount: true,
-      refetchOnReconnect: 'always'
+      refetchOnReconnect: true
     },
     mutations: {
       retry: 1

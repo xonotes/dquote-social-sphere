@@ -23,22 +23,50 @@ export interface AuthUser {
 }
 
 export const getCurrentUser = async (): Promise<AuthUser | null> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) return null;
-  
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
+  try {
+    console.log('Getting current user...');
     
-  if (!profile) return null;
-  
-  return { user, profile };
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError) {
+      console.error('Error getting user:', userError);
+      return null;
+    }
+    
+    if (!user) {
+      console.log('No user found');
+      return null;
+    }
+    
+    console.log('User found, getting profile...');
+    
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+      
+    if (profileError) {
+      console.error('Error getting profile:', profileError);
+      return null;
+    }
+    
+    if (!profile) {
+      console.error('No profile found for user');
+      return null;
+    }
+    
+    console.log('User and profile loaded successfully');
+    return { user, profile };
+  } catch (error) {
+    console.error('Unexpected error in getCurrentUser:', error);
+    return null;
+  }
 };
 
 export const signUp = async (email: string, password: string, username: string, displayName: string) => {
+  console.log('Signing up user...');
+  
   // Check if username is already taken
   const { data: existingUser } = await supabase
     .from('profiles')
@@ -62,22 +90,37 @@ export const signUp = async (email: string, password: string, username: string, 
   });
   
   if (error) throw error;
+  console.log('User signed up successfully');
   return data;
 };
 
 export const signIn = async (email: string, password: string) => {
+  console.log('Signing in user...');
+  
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password
   });
   
-  if (error) throw error;
+  if (error) {
+    console.error('Sign in error:', error);
+    throw error;
+  }
+  
+  console.log('User signed in successfully');
   return data;
 };
 
 export const signOut = async () => {
+  console.log('Signing out user...');
+  
   const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  if (error) {
+    console.error('Sign out error:', error);
+    throw error;
+  }
+  
+  console.log('User signed out successfully');
 };
 
 export const resetPassword = async (email: string) => {

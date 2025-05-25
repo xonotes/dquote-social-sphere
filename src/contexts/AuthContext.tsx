@@ -29,8 +29,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refetchUser = async () => {
     try {
+      console.log('Refetching user...');
       const currentUser = await getCurrentUser();
       setUser(currentUser);
+      console.log('User refetched:', currentUser ? 'Success' : 'No user');
     } catch (error) {
       console.error('Error fetching user:', error);
       setUser(null);
@@ -38,28 +40,54 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const initAuth = async () => {
       try {
+        console.log('Initializing auth...');
         const currentUser = await getCurrentUser();
-        setUser(currentUser);
+        if (mounted) {
+          setUser(currentUser);
+          console.log('Auth initialized:', currentUser ? 'User found' : 'No user');
+        }
       } catch (error) {
         console.error('Error initializing auth:', error);
+        if (mounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session ? 'Session exists' : 'No session');
+      
+      if (!mounted) return;
+
       if (event === 'SIGNED_IN' && session) {
-        await refetchUser();
+        setTimeout(async () => {
+          if (mounted) {
+            await refetchUser();
+          }
+        }, 0);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
       }
+      
+      if (loading) {
+        setLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const value: AuthContextType = {

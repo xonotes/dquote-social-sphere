@@ -2,6 +2,7 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthPage from '@/pages/AuthPage';
+import LoadingScreen from '@/components/LoadingScreen';
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -10,15 +11,10 @@ interface AuthGateProps {
 const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   const { user, loading } = useAuth();
 
+  console.log('AuthGate state:', { hasUser: !!user, loading });
+
   if (loading) {
-    return (
-      <div className="min-h-screen bg-blue-600 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-4">DQUOTE</h1>
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) {
