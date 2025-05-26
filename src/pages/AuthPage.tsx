@@ -67,18 +67,21 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-black flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <img src="/lovable-uploads/8e60a9a6-f9b0-4722-81cb-c59464a14723.png" alt="DQUOTE" className="h-16" />
+          </div>
           <h1 className="text-4xl font-bold text-blue-600 mb-2">DQUOTE</h1>
-          <p className="text-gray-600">Connect, Share, Inspire</p>
+          <p className="text-gray-600 dark:text-gray-300">Connect, Share, Inspire</p>
         </div>
 
-        <Card>
+        <Card className="dark:bg-gray-900 dark:border-gray-700">
           <CardHeader>
-            <CardTitle>Welcome to DQUOTE</CardTitle>
-            <CardDescription>Sign in to your account or create a new one</CardDescription>
+            <CardTitle className="dark:text-white">Welcome to DQUOTE</CardTitle>
+            <CardDescription className="dark:text-gray-300">Sign in to your account or create a new one</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="signin">

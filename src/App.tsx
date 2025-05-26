@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -26,6 +25,7 @@ import StoryCreatePage from "@/pages/StoryCreatePage";
 import StoryViewPage from "@/pages/StoryViewPage";
 import AdminPage from "@/pages/AdminPage";
 import NotFound from "@/pages/NotFound";
+import HowToPage from "@/pages/HowToPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +67,7 @@ const App: React.FC = () => {
                     <Route path="profile/:username/followers" element={<FollowersPage />} />
                     <Route path="profile/:username/following" element={<FollowingPage />} />
                     <Route path="settings" element={<SettingsPage />} />
+                    <Route path="how-to" element={<HowToPage />} />
                     <Route path="verification" element={<VerificationPage />} />
                     <Route path="terms" element={<TermsPage />} />
                     <Route path="privacy" element={<PrivacyPage />} />
