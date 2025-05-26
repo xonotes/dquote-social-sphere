@@ -469,6 +469,10 @@ export type Database = {
         }
         Returns: string
       }
+      custom_access_token_hook: {
+        Args: { event: Json }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _user_id: string

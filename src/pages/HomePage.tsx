@@ -35,6 +35,17 @@ const HomePage = () => {
 
       console.log('Fetching home feed...');
 
+      // Get users that the current user follows
+      const { data: followingData } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', user.profile.id);
+
+      const followingIds = followingData?.map(f => f.following_id) || [];
+      
+      // Include current user's posts + following users' posts
+      const userIds = [user.profile.id, ...followingIds];
+
       // Single optimized query with all required data
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
@@ -51,6 +62,7 @@ const HomePage = () => {
             is_verified
           )
         `)
+        .in('user_id', userIds)
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -60,7 +72,7 @@ const HomePage = () => {
       }
 
       if (!postsData || postsData.length === 0) {
-        console.log('No posts found');
+        console.log('No posts found in feed');
         return [];
       }
 
@@ -119,7 +131,7 @@ const HomePage = () => {
     return (
       <div className="min-h-screen bg-gray-50 pb-20">
         <div className="bg-white border-b sticky top-0 z-10 p-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600">DQUOTE</h1>
+          <img src="/lovable-uploads/8e60a9a6-f9b0-4722-81cb-c59464a14723.png" alt="DQUOTE" className="h-8" />
         </div>
         <div className="text-center py-12 px-4">
           <h3 className="text-lg font-medium text-gray-900 mb-2">Something went wrong</h3>
@@ -139,7 +151,7 @@ const HomePage = () => {
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center z-10">
-        <h1 className="text-2xl font-bold text-blue-600">DQUOTE</h1>
+        <img src="/lovable-uploads/8e60a9a6-f9b0-4722-81cb-c59464a14723.png" alt="DQUOTE" className="h-8" />
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
             {user?.profile.avatar_url ? (

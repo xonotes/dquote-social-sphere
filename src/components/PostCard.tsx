@@ -40,6 +40,12 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const [isLiked, setIsLiked] = useState(post.user_has_liked);
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [isLiking, setIsLiking] = useState(false);
+  const [showFullContent, setShowFullContent] = useState(false);
+
+  const shouldTruncate = post.content.length > 300;
+  const displayContent = shouldTruncate && !showFullContent 
+    ? post.content.slice(0, 300) + '...' 
+    : post.content;
 
   const likeMutation = useMutation({
     mutationFn: async () => {
@@ -170,9 +176,9 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <div className="flex items-center space-x-1">
               <span className="font-semibold text-sm">{post.profiles.display_name}</span>
               {post.profiles.is_verified && (
-                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs">✓</span>
-                </div>
+                <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
               )}
             </div>
             <span className="text-gray-500 text-xs">@{post.profiles.username}</span>
@@ -201,7 +207,18 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
       {/* Content */}
       <Link to={`/post/${post.id}`} className="block">
         <div className="px-4 pb-3">
-          <p className="text-gray-900 whitespace-pre-wrap">{post.content}</p>
+          <p className="text-gray-900 whitespace-pre-wrap">{displayContent}</p>
+          {shouldTruncate && !showFullContent && (
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                setShowFullContent(true);
+              }}
+              className="text-blue-600 hover:text-blue-800 text-sm mt-1"
+            >
+              Read more
+            </button>
+          )}
           {post.image_url && (
             <div className="mt-3 rounded-lg overflow-hidden">
               <img 
@@ -219,7 +236,7 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
         <div className="flex items-center space-x-6">
           <button 
             onClick={() => likeMutation.mutate()}
-            className={`flex items-center space-x-2 transition-colors ${
+            className={`flex items-center space-x-2 transition-all duration-200 ${
               isLiked ? 'text-red-500' : 'text-gray-600 hover:text-red-500'
             }`}
             disabled={isLiking || !user}
@@ -227,7 +244,7 @@ const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <Heart 
               size={20} 
               fill={isLiked ? 'currentColor' : 'none'}
-              className={isLiking ? 'animate-pulse' : ''}
+              className={`transition-transform duration-200 ${isLiking ? 'scale-110' : 'scale-100'}`}
             />
             <span className="text-sm font-medium">{likesCount}</span>
           </button>

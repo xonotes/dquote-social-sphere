@@ -14,7 +14,6 @@ const ProfilePage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'posts' | 'followers' | 'following'>('posts');
 
   const isOwnProfile = !username || username === user?.profile.username;
   const profileUsername = username || user?.profile.username;
@@ -49,7 +48,12 @@ const ProfilePage = () => {
         supabase.from('follows').select('*', { count: 'exact' }).eq('following_id', profile.id),
         supabase.from('follows').select('*', { count: 'exact' }).eq('follower_id', profile.id),
         supabase.from('posts').select('*', { count: 'exact' }).eq('user_id', profile.id),
-        supabase.from('likes').select('*', { count: 'exact' }).eq('user_id', profile.id)
+        supabase
+          .from('likes')
+          .select('*', { count: 'exact' })
+          .in('post_id', 
+            supabase.from('posts').select('id').eq('user_id', profile.id)
+          )
       ]);
 
       return {
@@ -296,9 +300,9 @@ const ProfilePage = () => {
             <div className="flex items-center space-x-2 mb-1">
               <h2 className="text-xl font-bold">{profile.display_name}</h2>
               {profile.is_verified && (
-                <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs">✓</span>
-                </div>
+                <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
               )}
             </div>
             <p className="text-gray-600 mb-2">@{profile.username}</p>
@@ -312,14 +316,18 @@ const ProfilePage = () => {
             <div className="font-bold text-lg">{stats?.posts || 0}</div>
             <div className="text-gray-600 text-sm">Posts</div>
           </div>
-          <div>
-            <div className="font-bold text-lg">{stats?.followers || 0}</div>
-            <div className="text-gray-600 text-sm">Followers</div>
-          </div>
-          <div>
-            <div className="font-bold text-lg">{stats?.following || 0}</div>
-            <div className="text-gray-600 text-sm">Following</div>
-          </div>
+          <Link to={`/profile/${profile.username}/followers`}>
+            <div className="hover:bg-gray-50 p-2 rounded transition-colors">
+              <div className="font-bold text-lg">{stats?.followers || 0}</div>
+              <div className="text-gray-600 text-sm">Followers</div>
+            </div>
+          </Link>
+          <Link to={`/profile/${profile.username}/following`}>
+            <div className="hover:bg-gray-50 p-2 rounded transition-colors">
+              <div className="font-bold text-lg">{stats?.following || 0}</div>
+              <div className="text-gray-600 text-sm">Following</div>
+            </div>
+          </Link>
           <div>
             <div className="font-bold text-lg">{stats?.likes || 0}</div>
             <div className="text-gray-600 text-sm">Likes</div>
