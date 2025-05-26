@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -44,23 +43,33 @@ const ProfilePage = () => {
     queryFn: async () => {
       if (!profile) return null;
 
-      const [followersRes, followingRes, postsRes, likesRes] = await Promise.all([
+      const [followersRes, followingRes, postsRes] = await Promise.all([
         supabase.from('follows').select('*', { count: 'exact' }).eq('following_id', profile.id),
         supabase.from('follows').select('*', { count: 'exact' }).eq('follower_id', profile.id),
-        supabase.from('posts').select('*', { count: 'exact' }).eq('user_id', profile.id),
-        supabase
+        supabase.from('posts').select('*', { count: 'exact' }).eq('user_id', profile.id)
+      ]);
+
+      // Get user posts first, then count likes for those posts
+      const { data: userPosts } = await supabase
+        .from('posts')
+        .select('id')
+        .eq('user_id', profile.id);
+
+      let likesCount = 0;
+      if (userPosts && userPosts.length > 0) {
+        const postIds = userPosts.map(post => post.id);
+        const { count } = await supabase
           .from('likes')
           .select('*', { count: 'exact' })
-          .in('post_id', 
-            supabase.from('posts').select('id').eq('user_id', profile.id)
-          )
-      ]);
+          .in('post_id', postIds);
+        likesCount = count || 0;
+      }
 
       return {
         followers: followersRes.count || 0,
         following: followingRes.count || 0,
         posts: postsRes.count || 0,
-        likes: likesRes.count || 0
+        likes: likesCount
       };
     },
     enabled: !!profile
