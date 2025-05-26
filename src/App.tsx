@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import AuthGate from "@/components/AuthGate";
 import Layout from "@/components/Layout";
 import HomePage from "@/pages/HomePage";
@@ -21,6 +22,9 @@ import TermsPage from "@/pages/TermsPage";
 import PrivacyPage from "@/pages/PrivacyPage";
 import FollowersPage from "@/pages/FollowersPage";
 import FollowingPage from "@/pages/FollowingPage";
+import StoryCreatePage from "@/pages/StoryCreatePage";
+import StoryViewPage from "@/pages/StoryViewPage";
+import AdminPage from "@/pages/AdminPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -45,35 +49,40 @@ const queryClient = new QueryClient({
 const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <AuthGate>
-              <Routes>
-                <Route path="/" element={<Navigate to="/home" replace />} />
-                <Route path="/" element={<Layout />}>
-                  <Route path="home" element={<HomePage />} />
-                  <Route path="explore" element={<ExplorePage />} />
-                  <Route path="create" element={<CreatePage />} />
-                  <Route path="notifications" element={<NotificationsPage />} />
-                  <Route path="profile/:username?" element={<ProfilePage />} />
-                  <Route path="profile/:username/followers" element={<FollowersPage />} />
-                  <Route path="profile/:username/following" element={<FollowingPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="verification" element={<VerificationPage />} />
-                  <Route path="terms" element={<TermsPage />} />
-                  <Route path="privacy" element={<PrivacyPage />} />
-                </Route>
-                <Route path="/post/:postId" element={<PostDetailPage />} />
-                <Route path="/post/:postId/comments" element={<CommentsPage />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </AuthGate>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
+      <ThemeProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <AuthGate>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/home" replace />} />
+                  <Route path="/" element={<Layout />}>
+                    <Route path="home" element={<HomePage />} />
+                    <Route path="explore" element={<ExplorePage />} />
+                    <Route path="create" element={<CreatePage />} />
+                    <Route path="notifications" element={<NotificationsPage />} />
+                    <Route path="profile/:username?" element={<ProfilePage />} />
+                    <Route path="profile/:username/followers" element={<FollowersPage />} />
+                    <Route path="profile/:username/following" element={<FollowingPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="verification" element={<VerificationPage />} />
+                    <Route path="terms" element={<TermsPage />} />
+                    <Route path="privacy" element={<PrivacyPage />} />
+                    <Route path="admin" element={<AdminPage />} />
+                    <Route path="story/create" element={<StoryCreatePage />} />
+                    <Route path="story/:userId" element={<StoryViewPage />} />
+                  </Route>
+                  <Route path="/post/:postId" element={<PostDetailPage />} />
+                  <Route path="/post/:postId/comments" element={<CommentsPage />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </AuthGate>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };

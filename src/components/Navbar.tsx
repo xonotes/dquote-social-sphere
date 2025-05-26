@@ -1,17 +1,19 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { Home, Search, PlusSquare, Heart, User } from 'lucide-react';
 
 const Navbar = () => {
   const location = useLocation();
+  const { user } = useAuth();
 
   const navItems = [
     { icon: Home, path: '/home', label: 'Home' },
     { icon: Search, path: '/explore', label: 'Explore' },
     { icon: PlusSquare, path: '/create', label: 'Create' },
     { icon: Heart, path: '/notifications', label: 'Notifications' },
-    { icon: User, path: '/profile', label: 'Profile' }
+    { icon: User, path: `/profile/${user?.profile.username}`, label: 'Profile' }
   ];
 
   return (
@@ -22,7 +24,7 @@ const Navbar = () => {
             key={path}
             to={path}
             className={`flex flex-col items-center p-2 ${
-              location.pathname === path
+              location.pathname === path || (label === 'Profile' && location.pathname.startsWith('/profile'))
                 ? 'text-blue-600'
                 : 'text-gray-400 hover:text-gray-600'
             }`}

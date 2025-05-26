@@ -1,256 +1,306 @@
 
 import React, { useState } from 'react';
-import { Search, User } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Link } from 'react-router-dom';
+import { Search, TrendingUp, Users } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PostCard from '@/components/PostCard';
-import { Skeleton } from '@/components/ui/skeleton';
+import RecommendedUsers from '@/components/RecommendedUsers';
+import { Link } from 'react-router-dom';
 
 const ExplorePage = () => {
-  const [searchQuery, setSearchQuery] = useState('');
   const { user } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: randomProfiles } = useQuery({
-    queryKey: ['random-profiles'],
+  // Get trending posts (most liked in last 24 hours)
+  const { data: trendingPosts } = useQuery({
+    queryKey: ['trending-posts'],
     queryFn: async () => {
+      if (!user) return [];
+
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
       const { data, error } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, is_verified, bio')
-        .eq('is_private', false)
-        .neq('id', user?.profile.id || '')
-        .limit(10);
-
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!user,
-    staleTime: 300000 // 5 minutes
-  });
-
-  const { data: posts, isLoading } = useQuery({
-    queryKey: ['explore-posts', searchQuery],
-    queryFn: async () => {
-      console.log('Fetching explore posts, search:', searchQuery);
-
-      let query = supabase
         .from('posts')
         .select(`
-          id,
-          content,
-          image_url,
-          created_at,
-          user_id,
-          profiles:profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified)
+          *,
+          profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified)
         `)
+        .gte('created_at', yesterday.toISOString())
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (searchQuery.trim()) {
-        query = query.ilike('content', `%${searchQuery.trim()}%`);
-      }
+      if (error) throw error;
 
-      const { data: postsData, error } = await query;
-      if (error) {
-        console.error('Error fetching explore posts:', error);
-        throw error;
-      }
+      // Add like counts and user interaction data
+      const postsWithData = await Promise.all(
+        (data || []).map(async (post) => {
+          const [likesRes, commentsRes, userLikeRes] = await Promise.all([
+            supabase.from('likes').select('id', { count: 'exact' }).eq('post_id', post.id),
+            supabase.from('comments').select('id', { count: 'exact' }).eq('post_id', post.id),
+            supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', user.profile.id).maybeSingle()
+          ]);
 
-      if (!postsData || postsData.length === 0) {
-        return [];
-      }
+          return {
+            ...post,
+            likes_count: likesRes.count || 0,
+            comments_count: commentsRes.count || 0,
+            user_has_liked: !!userLikeRes.data
+          };
+        })
+      );
 
-      // Get engagement data efficiently
-      const postIds = postsData.map(post => post.id);
-      
-      const [likesData, commentsData, userLikesData] = await Promise.all([
-        supabase.from('likes').select('post_id').in('post_id', postIds),
-        supabase.from('comments').select('post_id').in('post_id', postIds),
-        user ? supabase.from('likes').select('post_id').in('post_id', postIds).eq('user_id', user.profile.id) : Promise.resolve({ data: [] })
-      ]);
-
-      const likeCounts = (likesData.data || []).reduce((acc, like) => {
-        acc[like.post_id] = (acc[like.post_id] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const commentCounts = (commentsData.data || []).reduce((acc, comment) => {
-        acc[comment.post_id] = (acc[comment.post_id] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const userLikes = new Set((userLikesData.data || []).map(like => like.post_id));
-
-      return postsData.map(post => ({
-        ...post,
-        likes_count: likeCounts[post.id] || 0,
-        comments_count: commentCounts[post.id] || 0,
-        user_has_liked: userLikes.has(post.id)
-      }));
+      // Sort by likes count
+      return postsWithData.sort((a, b) => b.likes_count - a.likes_count);
     },
-    staleTime: 60000,
-    retry: 1
+    enabled: !!user
   });
 
-  const { data: users } = useQuery({
-    queryKey: ['explore-users', searchQuery],
+  // Get random profiles for discovery
+  const { data: randomProfiles } = useQuery({
+    queryKey: ['random-profiles'],
     queryFn: async () => {
-      if (!searchQuery.trim()) return [];
-      
-      console.log('Searching users:', searchQuery);
+      if (!user) return [];
+
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, is_verified, bio')
-        .or(`username.ilike.%${searchQuery.trim()}%,display_name.ilike.%${searchQuery.trim()}%`)
-        .eq('is_private', false)
+        .select('*')
+        .neq('id', user.profile.id)
         .limit(10);
 
-      if (error) {
-        console.error('Error searching users:', error);
-        throw error;
-      }
-      return data || [];
+      if (error) throw error;
+
+      // Shuffle the profiles
+      return data?.sort(() => Math.random() - 0.5) || [];
     },
-    enabled: !!searchQuery.trim(),
-    staleTime: 30000
+    enabled: !!user
+  });
+
+  // Search functionality
+  const { data: searchResults } = useQuery({
+    queryKey: ['search', searchQuery],
+    queryFn: async () => {
+      if (!searchQuery.trim()) return { posts: [], users: [] };
+
+      const [postsRes, usersRes] = await Promise.all([
+        supabase
+          .from('posts')
+          .select(`
+            *,
+            profiles!posts_user_id_fkey (username, display_name, avatar_url, is_verified)
+          `)
+          .ilike('content', `%${searchQuery}%`)
+          .limit(10),
+        supabase
+          .from('profiles')
+          .select('*')
+          .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+          .limit(10)
+      ]);
+
+      const postsWithData = await Promise.all(
+        (postsRes.data || []).map(async (post) => {
+          const [likesRes, commentsRes, userLikeRes] = await Promise.all([
+            supabase.from('likes').select('id', { count: 'exact' }).eq('post_id', post.id),
+            supabase.from('comments').select('id', { count: 'exact' }).eq('post_id', post.id),
+            user ? supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', user.profile.id).maybeSingle() : Promise.resolve({ data: null })
+          ]);
+
+          return {
+            ...post,
+            likes_count: likesRes.count || 0,
+            comments_count: commentsRes.count || 0,
+            user_has_liked: !!userLikeRes.data
+          };
+        })
+      );
+
+      return {
+        posts: postsWithData,
+        users: usersRes.data || []
+      };
+    },
+    enabled: !!searchQuery.trim()
   });
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="bg-white border-b sticky top-0 z-10">
+      {/* Header */}
+      <div className="bg-white border-b">
         <div className="p-4">
-          <h1 className="text-xl font-bold mb-4">Explore</h1>
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search users and posts..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div className="flex items-center space-x-4 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <Input
+                placeholder="Search posts and users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Explore
+            </h1>
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="text-orange-500" size={20} />
+              <span className="text-sm font-medium text-gray-600">Trending</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="space-y-6">
-        {/* Random Profiles Section */}
-        {!searchQuery && randomProfiles && randomProfiles.length > 0 && (
+      {searchQuery.trim() ? (
+        /* Search Results */
+        <div className="p-4">
+          <Tabs defaultValue="posts">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="posts">Posts</TabsTrigger>
+              <TabsTrigger value="users">Users</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="posts" className="space-y-0 mt-4">
+              {searchResults?.posts.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))}
+              {searchResults?.posts.length === 0 && (
+                <div className="text-center py-8">
+                  <p className="text-gray-600">No posts found for "{searchQuery}"</p>
+                </div>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="users" className="mt-4">
+              <div className="space-y-3">
+                {searchResults?.users.map((profile) => (
+                  <div key={profile.id} className="bg-white p-4 rounded-lg border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <Link to={`/profile/${profile.username}`}>
+                          <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                            {profile.avatar_url ? (
+                              <img
+                                src={profile.avatar_url}
+                                alt={profile.username}
+                                className="w-12 h-12 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-gray-600 font-semibold">
+                                {profile.display_name?.charAt(0) || 'U'}
+                              </span>
+                            )}
+                          </div>
+                        </Link>
+                        <div>
+                          <div className="flex items-center space-x-1">
+                            <Link to={`/profile/${profile.username}`}>
+                              <span className="font-semibold hover:underline">
+                                {profile.display_name}
+                              </span>
+                            </Link>
+                            {profile.is_verified && (
+                              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
+                          <Link to={`/profile/${profile.username}`}>
+                            <span className="text-gray-600 text-sm hover:underline">
+                              @{profile.username}
+                            </span>
+                          </Link>
+                          {profile.bio && (
+                            <p className="text-sm text-gray-700 mt-1">{profile.bio}</p>
+                          )}
+                        </div>
+                      </div>
+                      <Button size="sm">Follow</Button>
+                    </div>
+                  </div>
+                ))}
+                {searchResults?.users.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600">No users found for "{searchQuery}"</p>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      ) : (
+        /* Default Explore Content */
+        <div>
+          {/* Discover Users Section */}
           <div className="bg-white border-b p-4">
-            <h2 className="text-lg font-semibold mb-3">Discover People</h2>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <Users className="text-blue-500" size={20} />
+                <h2 className="font-semibold">Discover People</h2>
+              </div>
+            </div>
+            
             <div className="flex space-x-4 overflow-x-auto pb-2">
-              {randomProfiles.map((profile: any) => (
-                <Link 
-                  key={profile.id}
-                  to={`/profile/${profile.username}`}
-                  className="flex-shrink-0 w-32 text-center hover:bg-gray-50 p-2 rounded-lg transition-colors"
-                >
-                  <div className="w-16 h-16 mx-auto mb-2 bg-gray-200 rounded-full flex items-center justify-center">
-                    {profile.avatar_url ? (
-                      <img
-                        src={profile.avatar_url}
-                        alt={profile.username}
-                        className="w-16 h-16 rounded-full object-cover"
-                      />
-                    ) : (
-                      <User className="h-8 w-8 text-gray-400" />
-                    )}
-                  </div>
-                  <div className="flex items-center justify-center space-x-1 mb-1">
-                    <span className="text-sm font-medium text-gray-900 truncate">
-                      {profile.display_name || profile.username}
+              {randomProfiles?.slice(0, 8).map((profile) => (
+                <div key={profile.id} className="flex flex-col items-center space-y-2 flex-shrink-0">
+                  <Link to={`/profile/${profile.username}`}>
+                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
+                      {profile.avatar_url ? (
+                        <img
+                          src={profile.avatar_url}
+                          alt={profile.username}
+                          className="w-16 h-16 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-gray-600 font-semibold">
+                          {profile.display_name?.charAt(0) || 'U'}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center space-x-1">
+                      <span className="text-sm font-medium max-w-16 truncate">
+                        {profile.display_name}
+                      </span>
+                      {profile.is_verified && (
+                        <svg className="w-3 h-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 max-w-16 truncate block">
+                      @{profile.username}
                     </span>
-                    {profile.is_verified && (
-                      <svg className="w-3 h-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                    )}
                   </div>
-                  <p className="text-xs text-gray-600 truncate">@{profile.username}</p>
-                  {profile.bio && (
-                    <p className="text-xs text-gray-700 mt-1 line-clamp-2 h-8 overflow-hidden">
-                      {profile.bio}
-                    </p>
-                  )}
-                </Link>
+                </div>
               ))}
             </div>
           </div>
-        )}
 
-        <div className="p-4 space-y-6">
-          {searchQuery && users && users.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-3">Users</h2>
-              <div className="space-y-3">
-                {users.map((profile) => (
-                  <Link 
-                    key={profile.id} 
-                    to={`/profile/${profile.username}`}
-                    className="flex items-center space-x-3 p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
-                      {profile.avatar_url ? (
-                        <img src={profile.avatar_url} alt={profile.username} className="w-12 h-12 rounded-full object-cover" />
-                      ) : (
-                        <User className="h-6 w-6 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-1">
-                        <span className="font-semibold">{profile.display_name || profile.username}</span>
-                        {profile.is_verified && (
-                          <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
-                      <p className="text-gray-600 text-sm">@{profile.username}</p>
-                      {profile.bio && <p className="text-gray-700 text-sm mt-1 line-clamp-1">{profile.bio}</p>}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Recommended Users */}
+          <RecommendedUsers />
 
-          <div>
-            <h2 className="text-lg font-semibold mb-3">
-              {searchQuery ? 'Posts' : 'Latest Posts'}
-            </h2>
-            {isLoading ? (
-              <div className="space-y-0">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="bg-white border-b border-gray-200 p-4">
-                    <div className="flex items-center space-x-3 mb-3">
-                      <Skeleton className="w-8 h-8 rounded-full" />
-                      <div className="flex-1">
-                        <Skeleton className="h-4 w-24 mb-1" />
-                        <Skeleton className="h-3 w-16" />
-                      </div>
-                    </div>
-                    <Skeleton className="h-4 w-full mb-2" />
-                    <Skeleton className="h-4 w-2/3" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-0">
-                {posts && posts.length > 0 ? (
-                  posts.map((post) => (
-                    <PostCard key={post.id} post={post} />
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-600 bg-white rounded-lg">
-                    {searchQuery ? 'No posts found matching your search.' : 'No posts available.'}
-                  </div>
-                )}
+          {/* Trending Posts */}
+          <div className="space-y-0">
+            {trendingPosts?.map((post) => (
+              <PostCard key={post.id} post={post} />
+            ))}
+            {(!trendingPosts || trendingPosts.length === 0) && (
+              <div className="text-center py-12 bg-white">
+                <TrendingUp className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                <p className="text-gray-600">No trending posts at the moment</p>
+                <p className="text-sm text-gray-500">Check back later for trending content</p>
               </div>
             )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

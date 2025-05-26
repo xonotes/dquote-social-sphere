@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { signOut, updateProfile } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -10,23 +11,27 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, LogOut, Shield, Award, FileText, Lock } from 'lucide-react';
+import { ArrowLeft, LogOut, Shield, Award, FileText, Lock, Moon, Sun, Plus, X, Globe, Instagram, Twitter, Youtube } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const SettingsPage = () => {
   const { user, refetchUser } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   const [profileData, setProfileData] = useState({
     display_name: user?.profile.display_name || '',
     username: user?.profile.username || '',
     bio: user?.profile.bio || '',
     avatar_url: user?.profile.avatar_url || '',
-    is_private: user?.profile.is_private || false
+    is_private: user?.profile.is_private || false,
+    social_links: user?.profile.social_links || {}
   });
+
+  const [newSocialLink, setNewSocialLink] = useState({ platform: '', url: '' });
+  const [showAddSocial, setShowAddSocial] = useState(false);
 
   const [passwordData, setPasswordData] = useState({
     current: '',
@@ -67,7 +72,8 @@ const SettingsPage = () => {
         display_name: profileData.display_name,
         bio: profileData.bio,
         avatar_url: profileData.avatar_url || null,
-        is_private: profileData.is_private
+        is_private: profileData.is_private,
+        social_links: profileData.social_links
       };
 
       if (profileData.username !== user.profile.username) {
@@ -154,6 +160,38 @@ const SettingsPage = () => {
     return daysSinceChange >= 14;
   };
 
+  const handleAddSocialLink = () => {
+    if (newSocialLink.platform && newSocialLink.url) {
+      setProfileData(prev => ({
+        ...prev,
+        social_links: {
+          ...prev.social_links,
+          [newSocialLink.platform]: newSocialLink.url
+        }
+      }));
+      setNewSocialLink({ platform: '', url: '' });
+      setShowAddSocial(false);
+    }
+  };
+
+  const handleRemoveSocialLink = (platform: string) => {
+    const updatedLinks = { ...profileData.social_links };
+    delete updatedLinks[platform];
+    setProfileData(prev => ({
+      ...prev,
+      social_links: updatedLinks
+    }));
+  };
+
+  const getSocialIcon = (platform: string) => {
+    switch (platform.toLowerCase()) {
+      case 'instagram': return <Instagram size={16} />;
+      case 'twitter': return <Twitter size={16} />;
+      case 'youtube': return <Youtube size={16} />;
+      default: return <Globe size={16} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
@@ -167,6 +205,29 @@ const SettingsPage = () => {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Theme Toggle */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Appearance</CardTitle>
+            <CardDescription>Customize your app experience</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
+                <div>
+                  <Label>Dark Mode</Label>
+                  <p className="text-sm text-gray-500">Toggle dark/light theme</p>
+                </div>
+              </div>
+              <Switch
+                checked={theme === 'dark'}
+                onCheckedChange={toggleTheme}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Profile Settings */}
         <Card>
           <CardHeader>
@@ -222,6 +283,54 @@ const SettingsPage = () => {
                 onChange={(e) => setProfileData(prev => ({...prev, avatar_url: e.target.value}))}
                 placeholder="https://example.com/avatar.jpg"
               />
+            </div>
+
+            {/* Social Links */}
+            <div>
+              <Label>Social Links</Label>
+              <div className="space-y-2 mt-2">
+                {Object.entries(profileData.social_links).map(([platform, url]) => (
+                  <div key={platform} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
+                    {getSocialIcon(platform)}
+                    <span className="flex-1 text-sm">{platform}: {url as string}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRemoveSocialLink(platform)}
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+                ))}
+                
+                {showAddSocial ? (
+                  <div className="space-y-2 p-2 border rounded">
+                    <Input
+                      placeholder="Platform (e.g., instagram, twitter)"
+                      value={newSocialLink.platform}
+                      onChange={(e) => setNewSocialLink(prev => ({...prev, platform: e.target.value}))}
+                    />
+                    <Input
+                      placeholder="URL"
+                      value={newSocialLink.url}
+                      onChange={(e) => setNewSocialLink(prev => ({...prev, url: e.target.value}))}
+                    />
+                    <div className="flex space-x-2">
+                      <Button size="sm" onClick={handleAddSocialLink}>Add</Button>
+                      <Button size="sm" variant="outline" onClick={() => setShowAddSocial(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAddSocial(true)}
+                  >
+                    <Plus size={16} className="mr-1" />
+                    Add Social Link
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-between">

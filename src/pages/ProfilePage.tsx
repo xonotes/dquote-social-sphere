@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Share, UserPlus, UserMinus, Shield } from 'lucide-react';
+import { Settings, Share, UserPlus, UserMinus, Shield, Globe, Instagram, Twitter, Youtube } from 'lucide-react';
 import PostCard from '@/components/PostCard';
 
 const ProfilePage = () => {
@@ -131,6 +131,23 @@ const ProfilePage = () => {
     enabled: !!profile
   });
 
+  const { data: isBlocked } = useQuery({
+    queryKey: ['is-blocked', profile?.id],
+    queryFn: async () => {
+      if (!profile || !user || isOwnProfile) return false;
+
+      const { data } = await supabase
+        .from('blocks')
+        .select('id')
+        .eq('blocker_id', user.profile.id)
+        .eq('blocked_id', profile.id)
+        .maybeSingle();
+
+      return !!data;
+    },
+    enabled: !!profile && !!user && !isOwnProfile
+  });
+
   const followMutation = useMutation({
     mutationFn: async () => {
       if (!profile || !user) throw new Error('Missing data');
@@ -179,16 +196,27 @@ const ProfilePage = () => {
     mutationFn: async () => {
       if (!profile || !user) throw new Error('Missing data');
 
-      const { error } = await supabase
-        .from('blocks')
-        .insert({ blocker_id: user.profile.id, blocked_id: profile.id });
-      
-      if (error) throw error;
+      if (isBlocked) {
+        const { error } = await supabase
+          .from('blocks')
+          .delete()
+          .eq('blocker_id', user.profile.id)
+          .eq('blocked_id', profile.id);
+        
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('blocks')
+          .insert({ blocker_id: user.profile.id, blocked_id: profile.id });
+        
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['is-blocked'] });
       toast({
-        title: "User blocked",
-        description: "You have blocked this user successfully"
+        title: isBlocked ? "User unblocked" : "User blocked",
+        description: isBlocked ? "You have unblocked this user" : "You have blocked this user successfully"
       });
     },
     onError: (error: any) => {
@@ -207,6 +235,15 @@ const ProfilePage = () => {
       title: "Link copied!",
       description: "Profile link has been copied to clipboard"
     });
+  };
+
+  const getSocialIcon = (platform: string) => {
+    switch (platform.toLowerCase()) {
+      case 'instagram': return <Instagram size={16} className="text-pink-500" />;
+      case 'twitter': return <Twitter size={16} className="text-blue-400" />;
+      case 'youtube': return <Youtube size={16} className="text-red-500" />;
+      default: return <Globe size={16} className="text-gray-500" />;
+    }
   };
 
   if (profileLoading) {
@@ -276,7 +313,7 @@ const ProfilePage = () => {
                   )}
                 </Button>
                 <Button 
-                  variant="outline" 
+                  variant={isBlocked ? "default" : "outline"}
                   size="sm"
                   onClick={() => blockMutation.mutate()}
                   disabled={blockMutation.isPending}
@@ -310,12 +347,29 @@ const ProfilePage = () => {
               <h2 className="text-xl font-bold">{profile.display_name}</h2>
               {profile.is_verified && (
                 <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
               )}
             </div>
             <p className="text-gray-600 mb-2">@{profile.username}</p>
-            {profile.bio && <p className="text-gray-900">{profile.bio}</p>}
+            {profile.bio && <p className="text-gray-900 mb-2">{profile.bio}</p>}
+            
+            {/* Social Links */}
+            {profile.social_links && Object.keys(profile.social_links).length > 0 && (
+              <div className="flex space-x-3 mb-2">
+                {Object.entries(profile.social_links).map(([platform, url]) => (
+                  <a
+                    key={platform}
+                    href={url as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-1 text-sm text-gray-600 hover:text-gray-800"
+                  >
+                    {getSocialIcon(platform)}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
