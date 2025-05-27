@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { ArrowLeft, Mail } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const OTPVerificationPage = () => {
   const [otp, setOtp] = useState('');
@@ -48,18 +49,15 @@ const OTPVerificationPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/v1/verify-otp', {
-        method: 'POST',
+      const { data, error } = await supabase.functions.invoke('verify-otp', {
+        body: JSON.stringify({ email, otp }),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, otp }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Verification failed');
+      if (error) {
+        throw new Error(error.message || 'Verification failed');
       }
 
       // OTP verified, now sign in the user
@@ -86,18 +84,15 @@ const OTPVerificationPage = () => {
     setIsResending(true);
 
     try {
-      const response = await fetch('/api/v1/send-otp', {
-        method: 'POST',
+      const { data, error } = await supabase.functions.invoke('send-otp', {
+        body: JSON.stringify({ email }),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend OTP');
+      if (error) {
+        throw new Error(error.message || 'Failed to resend OTP');
       }
 
       toast({

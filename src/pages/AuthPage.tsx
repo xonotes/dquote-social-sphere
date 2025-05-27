@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { supabase } from '@/integrations/supabase/client';
 
 const AuthPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -52,19 +53,16 @@ const AuthPage = () => {
     setIsLoading(true);
 
     try {
-      // First send OTP
-      const response = await fetch('/api/v1/send-otp', {
-        method: 'POST',
+      // First send OTP using Supabase functions
+      const { data, error } = await supabase.functions.invoke('send-otp', {
+        body: JSON.stringify({ email: signUpForm.email }),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: signUpForm.email }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send verification code');
+      if (error) {
+        throw new Error(error.message || 'Failed to send verification code');
       }
 
       // Create the user account (but they won't be able to sign in until verified)
