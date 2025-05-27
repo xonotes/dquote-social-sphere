@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { signIn, signUp } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const AuthPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [signInForm, setSignInForm] = useState({
     email: '',
@@ -50,10 +52,37 @@ const AuthPage = () => {
     setIsLoading(true);
 
     try {
+      // First send OTP
+      const response = await fetch('/api/v1/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: signUpForm.email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send verification code');
+      }
+
+      // Create the user account (but they won't be able to sign in until verified)
       await signUp(signUpForm.email, signUpForm.password, signUpForm.username, signUpForm.displayName);
+
       toast({
         title: "Account created!",
-        description: "Please check your email to verify your account."
+        description: "Please check your email for the verification code"
+      });
+
+      // Navigate to OTP verification page
+      navigate('/verify-otp', {
+        state: {
+          email: signUpForm.email,
+          password: signUpForm.password,
+          username: signUpForm.username,
+          displayName: signUpForm.displayName
+        }
       });
     } catch (error: any) {
       toast({
