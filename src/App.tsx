@@ -25,7 +25,6 @@ import FollowingPage from "@/pages/FollowingPage";
 import StoryCreatePage from "@/pages/StoryCreatePage";
 import StoryViewPage from "@/pages/StoryViewPage";
 import AdminPage from "@/pages/AdminPage";
-import OTPVerificationPage from "@/pages/OTPVerificationPage";
 import NotFound from "@/pages/NotFound";
 import HowToPage from "@/pages/HowToPage";
 
@@ -58,9 +57,6 @@ const App: React.FC = () => {
           <BrowserRouter>
             <AuthProvider>
               <Routes>
-                {/* Public routes */}
-                <Route path="/verify-otp" element={<OTPVerificationPage />} />
-                
                 {/* Protected routes */}
                 <Route path="/" element={<AuthGate><Navigate to="/home" replace /></AuthGate>} />
                 <Route path="/" element={<AuthGate><Layout /></AuthGate>}>

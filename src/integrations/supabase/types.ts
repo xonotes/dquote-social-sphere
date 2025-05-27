@@ -9,6 +9,33 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      admin_stats: {
+        Row: {
+          pending_verifications: number | null
+          total_comments: number | null
+          total_follows: number | null
+          total_likes: number | null
+          total_posts: number | null
+          total_users: number | null
+        }
+        Insert: {
+          pending_verifications?: number | null
+          total_comments?: number | null
+          total_follows?: number | null
+          total_likes?: number | null
+          total_posts?: number | null
+          total_users?: number | null
+        }
+        Update: {
+          pending_verifications?: number | null
+          total_comments?: number | null
+          total_follows?: number | null
+          total_likes?: number | null
+          total_posts?: number | null
+          total_users?: number | null
+        }
+        Relationships: []
+      }
       blocks: {
         Row: {
           blocked_id: string
@@ -226,36 +253,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      otp_verifications: {
-        Row: {
-          attempts: number
-          created_at: string
-          email: string
-          expires_at: string
-          id: string
-          is_verified: boolean
-          otp_code: string
-        }
-        Insert: {
-          attempts?: number
-          created_at?: string
-          email: string
-          expires_at?: string
-          id?: string
-          is_verified?: boolean
-          otp_code: string
-        }
-        Update: {
-          attempts?: number
-          created_at?: string
-          email?: string
-          expires_at?: string
-          id?: string
-          is_verified?: boolean
-          otp_code?: string
-        }
-        Relationships: []
       }
       posts: {
         Row: {
@@ -480,26 +477,12 @@ export type Database = {
       }
     }
     Views: {
-      admin_stats: {
-        Row: {
-          pending_verifications: number | null
-          total_comments: number | null
-          total_follows: number | null
-          total_likes: number | null
-          total_posts: number | null
-          total_users: number | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       check_rate_limit: {
         Args: { p_user_id: string; p_action: string; p_limit_seconds: number }
         Returns: boolean
-      }
-      cleanup_expired_otps: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
       }
       cleanup_expired_stories: {
         Args: Record<PropertyKey, never>
@@ -519,15 +502,6 @@ export type Database = {
       custom_access_token_hook: {
         Args: { event: Json }
         Returns: Json
-      }
-      get_user_activity_stats: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          month: string
-          new_users: number
-          total_posts: number
-          total_likes: number
-        }[]
       }
       has_role: {
         Args: {

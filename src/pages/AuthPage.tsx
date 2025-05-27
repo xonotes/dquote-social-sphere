@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
 
 const AuthPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +36,7 @@ const AuthPage = () => {
         title: "Welcome back!",
         description: "You have successfully signed in."
       });
+      navigate('/home');
     } catch (error: any) {
       toast({
         title: "Error",
@@ -53,35 +53,14 @@ const AuthPage = () => {
     setIsLoading(true);
 
     try {
-      // First send OTP using Supabase functions
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: JSON.stringify({ email: signUpForm.email }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (error) {
-        throw new Error(error.message || 'Failed to send verification code');
-      }
-
-      // Create the user account (but they won't be able to sign in until verified)
       await signUp(signUpForm.email, signUpForm.password, signUpForm.username, signUpForm.displayName);
-
+      
       toast({
         title: "Account created!",
-        description: "Please check your email for the verification code"
+        description: "Welcome to DQUOTE! You can now start using the platform."
       });
-
-      // Navigate to OTP verification page
-      navigate('/verify-otp', {
-        state: {
-          email: signUpForm.email,
-          password: signUpForm.password,
-          username: signUpForm.username,
-          displayName: signUpForm.displayName
-        }
-      });
+      
+      navigate('/home');
     } catch (error: any) {
       toast({
         title: "Error",
